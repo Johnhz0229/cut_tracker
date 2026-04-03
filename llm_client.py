@@ -101,7 +101,13 @@ Rules for food_items:
 - One entry per distinct food/ingredient mentioned.
 - calories = protein_g*4 + carbs_g*4 + fat_g*9 for each item.
 - Totals (protein_g, carbs_g, fat_g) must equal the sums of food_items.
-- Keep names short (≤ 30 chars)."""
+- Keep names short (≤ 30 chars).
+- Weight assumption: if the user gives a weight WITHOUT specifying "cooked" or "raw",
+  assume UNCOOKED weight for foods that are typically cooked and absorb water:
+  rice, pasta, noodles, oats, quinoa, couscous, lentils, beans, chickpeas, barley.
+  Use the uncooked nutritional values for these.
+  For everything else (meat, fish, vegetables, fruit, eggs, dairy) assume the weight
+  as stated without adjustment."""
 
 
 def _parse_response(content: str) -> dict:
