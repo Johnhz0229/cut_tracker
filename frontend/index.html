@@ -1173,13 +1173,17 @@ async function init() {
 
   if (!token) { showAuthScreen(); return; }
 
+  // Verify token before showing the app — apiFetch handles 401 automatically
+  // (clears localStorage + shows auth screen), so we only proceed on success.
+  const res = await apiFetch('/api/profile');
+  if (!res.success) return;   // 401 already handled inside apiFetch
+
   hideAuthScreen(username);
   updateDateLabel();
 
-  const res = await apiFetch('/api/profile');
-  if (res.success && res.data) {
+  if (res.data) {
     profile = res.data;
-  } else if (res.success) {
+  } else {
     document.getElementById('no-profile-banner').style.display = 'block';
   }
 
