@@ -1,10 +1,25 @@
 # Cut Tracker
 
-A local-first fat-loss tracking app. Log your food, activity, and weight daily. DeepSeek AI parses your natural language inputs into macros and calculates your calorie deficit with precise TEF accounting.
+A multi-user fat-loss tracking web app. Log your food, activity, and weight daily. DeepSeek AI parses natural language inputs into per-item macros and calculates your calorie deficit with full P&L-style breakdown — food intake → TEF → BMR → exercise → net energy.
+
+## Features
+
+- **AI food parsing** — describe what you ate in plain English; DeepSeek V3 extracts per-item macros (protein, carbs, fat, calories) including per-100g nutritional basis
+- **P&L energy breakdown** — Gross intake → TEF deduction → Net intake → TDEE burn → Net energy, color-coded green (deficit) / red (surplus)
+- **Accurate calorie burn** — NEAT activity multiplier (1.1–1.5) selected daily + separate exercise EAT via conservative MET defaults
+- **TEF accounting** — protein 25%, carbs 8%, fat 3% thermic effect deducted from intake
+- **Macro goals** — set protein/carbs/fat targets in Setup; goal badges shown on every log and history entry
+- **History** — full P&L breakdown for every past day, same layout as the Log tab
+- **Trends** — weight and deficit charts, 7-day/30-day averages, weight change since start
+- **CSV export** — one-click download of all records
+- **Multi-user** — bcrypt-hashed passwords, session tokens, user-scoped data isolation
+- **Admin panel** — hidden at `/admin`, create/delete users via `ADMIN_SECRET`
+
+---
 
 ## Quick Start
 
-**1. Install dependencies with uv**
+**1. Install dependencies**
 
 ```bash
 uv venv
@@ -12,11 +27,17 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 uv pip install -r requirements.txt
 ```
 
+Or with pip:
+
+```bash
+pip install -r requirements.txt
+```
+
 **2. Set up environment**
 
 ```bash
 cp .env.example .env
-# Edit .env and add your DEEPSEEK_API_KEY
+# Edit .env — add DEEPSEEK_API_KEY and ADMIN_SECRET at minimum
 ```
 
 Get a DeepSeek API key at https://platform.deepseek.com
@@ -29,39 +50,66 @@ python main.py
 
 Open http://localhost:8000 in your browser.
 
+**4. Create your account**
+
+Go to `/admin`, enter your `ADMIN_SECRET`, and create a user. Then log in at the main page.
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | Yes | DeepSeek API key |
+| `ADMIN_SECRET` | Yes | Secret key for the `/admin` panel |
+| `PORT` | No | Server port (default: `8000`) |
+| `DB_PATH` | No | SQLite file path (default: `records.db`) |
+
+---
+
+## How the Calculation Works
+
+```
+Gross intake (food kcal)
+  − TEF (protein 25% / carbs 8% / fat 3%)
+= Net intake
+
+  − BMR × activity multiplier  (NEAT)
+  − Exercise calories (EAT via MET formula)
+= TDEE (total daily energy expenditure)
+
+Net energy = Net intake − TDEE
+  Negative → deficit (green) ✓
+  Positive → surplus (red)  ✗
+```
+
+**BMR**: Mifflin-St Jeor formula  
+**Activity multiplier**: 1.1 (rest day) → 1.5 (very active), NEAT only — exercise is tracked separately  
+**Exercise**: MET × weight_kg × duration_hours, conservative defaults, intensity-adjusted only if explicitly stated
+
 ---
 
 ## Deploy on Railway
 
 1. Push this repo to GitHub.
 2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub repo.
-3. Select your repository.
-4. In the Railway project settings, add an environment variable:
-   - `DEEPSEEK_API_KEY` = your key
-5. Railway auto-detects the Python app. Set the start command to:
-   ```
-   python main.py
-   ```
-6. (Optional) Add a custom domain under Settings → Networking.
-
-**Data persistence on Railway:**
-- By default SQLite writes to `records.db` in the project directory, which resets on redeploy.
-- For persistence, add a Railway Volume and set the DB path via an env var, or switch to Railway's PostgreSQL add-on and update `database.py` to use `psycopg2`.
+3. Add environment variables: `DEEPSEEK_API_KEY`, `ADMIN_SECRET`.
+4. Set start command: `python main.py`
+5. For persistent data, add a Railway Volume and set `DB_PATH` to a path inside it.
 
 ---
 
 ## Data
 
-- Local: all data lives in `records.db` (SQLite) in the project root.
-- Export any time via the History tab → **Export CSV**.
-- The DB layer (`database.py`) is intentionally separated so you can swap the SQLite calls for PostgreSQL (`psycopg2`) with minimal changes.
+- All data lives in `records.db` (SQLite) — set `DB_PATH` env var to change location.
+- Export any time via History tab → **Export CSV**.
+- `database.py` is intentionally separated for easy swap to PostgreSQL.
 
 ---
 
 ## Cost Estimate
 
-Each "Analyze & Save" call makes one DeepSeek V3 API request (~400 input tokens, ~100 output tokens).
+Each "Analyze & Save" makes one DeepSeek V3 API call (~500 input tokens, ~150 output tokens).
 
-**~$0.0001 per log entry** at current DeepSeek pricing.
-
-Logging every day for a year costs roughly **$0.04**.
+**~$0.0001 per log entry** at current DeepSeek pricing.  
+Logging every day for a year ≈ **$0.04**.
