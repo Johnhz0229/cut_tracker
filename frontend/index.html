@@ -696,14 +696,33 @@ async function doLogout() {
 }
 
 // ── Log submission ────────────────────────────────────────────────────────────
+const LOG_CACHE_KEY = 'cut_tracker_log_cache';
+
+function getLogCache() {
+  try { return JSON.parse(localStorage.getItem(LOG_CACHE_KEY)); } catch { return null; }
+}
+
+function setLogCache(inputs, data) {
+  localStorage.setItem(LOG_CACHE_KEY, JSON.stringify({ inputs, data }));
+}
+
 async function submitLog() {
   hideError('log-error');
   const weight = document.getElementById('weight-input').value;
   const food = document.getElementById('food-input').value.trim();
   const exercise = document.getElementById('exercise-input').value.trim();
+  const activityMultiplier = parseFloat(document.getElementById('activity-multiplier-input').value);
 
   if (!weight || !food || !exercise) {
     showError('log-error', 'Please fill in all fields.');
+    return;
+  }
+
+  const inputs = { date: currentDate, weight_kg: parseFloat(weight), food, exercise, activityMultiplier };
+
+  const cache = getLogCache();
+  if (cache && JSON.stringify(cache.inputs) === JSON.stringify(inputs)) {
+    showResult(cache.data, profile);
     return;
   }
 
@@ -716,10 +735,10 @@ async function submitLog() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       date: currentDate,
-      weight_kg: parseFloat(weight),
+      weight_kg: inputs.weight_kg,
       food_description: food,
       exercise_description: exercise,
-      activity_multiplier: parseFloat(document.getElementById('activity-multiplier-input').value),
+      activity_multiplier: activityMultiplier,
     }),
   });
 
@@ -731,6 +750,7 @@ async function submitLog() {
     return;
   }
 
+  setLogCache(inputs, res.data);
   showResult(res.data, profile);
 }
 
