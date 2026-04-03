@@ -1,8 +1,9 @@
+import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Optional
 
-DB_PATH = "records.db"
+DB_PATH = os.environ.get("DB_PATH", "records.db")
 
 
 def get_connection():
