@@ -307,6 +307,12 @@ def admin_page():
     return FileResponse("frontend/admin.html")
 
 
+@app.get("/manifest.json", include_in_schema=False)
+def manifest():
+    return FileResponse("frontend/manifest.json", media_type="application/manifest+json")
+
+
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
