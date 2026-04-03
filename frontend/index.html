@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>Cut Tracker</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0a0a0a">
@@ -47,7 +47,7 @@
   }
 
   /* ── Tab content ── */
-  .tab-content { display: none; flex: 1; overflow-y: auto; padding: calc(var(--sp)*2); padding-bottom: 80px; }
+  .tab-content { display: none; flex: 1; overflow-y: auto; padding: calc(var(--sp)*2); padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   .tab-content.active { display: block; }
 
   /* ── Bottom nav ── */
@@ -62,6 +62,7 @@
     border-top: 1px solid var(--border);
     display: flex;
     z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .nav-btn {
     flex: 1;
@@ -313,7 +314,7 @@
 
   /* ── Toast ── */
   #toast {
-    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    position: fixed; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
     background: var(--green); color: #000;
     font-size: 14px; font-weight: 600;
     padding: 10px 20px; border-radius: 8px;
@@ -696,14 +697,33 @@ async function doLogout() {
 }
 
 // ── Log submission ────────────────────────────────────────────────────────────
+const LOG_CACHE_KEY = 'cut_tracker_log_cache';
+
+function getLogCache() {
+  try { return JSON.parse(localStorage.getItem(LOG_CACHE_KEY)); } catch { return null; }
+}
+
+function setLogCache(inputs, data) {
+  localStorage.setItem(LOG_CACHE_KEY, JSON.stringify({ inputs, data }));
+}
+
 async function submitLog() {
   hideError('log-error');
   const weight = document.getElementById('weight-input').value;
   const food = document.getElementById('food-input').value.trim();
   const exercise = document.getElementById('exercise-input').value.trim();
+  const activityMultiplier = parseFloat(document.getElementById('activity-multiplier-input').value);
 
   if (!weight || !food || !exercise) {
     showError('log-error', 'Please fill in all fields.');
+    return;
+  }
+
+  const inputs = { date: currentDate, weight_kg: parseFloat(weight), food, exercise, activityMultiplier };
+
+  const cache = getLogCache();
+  if (cache && JSON.stringify(cache.inputs) === JSON.stringify(inputs)) {
+    showResult(cache.data, profile);
     return;
   }
 
@@ -716,10 +736,10 @@ async function submitLog() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       date: currentDate,
-      weight_kg: parseFloat(weight),
+      weight_kg: inputs.weight_kg,
       food_description: food,
       exercise_description: exercise,
-      activity_multiplier: parseFloat(document.getElementById('activity-multiplier-input').value),
+      activity_multiplier: activityMultiplier,
     }),
   });
 
@@ -731,6 +751,7 @@ async function submitLog() {
     return;
   }
 
+  setLogCache(inputs, res.data);
   showResult(res.data, profile);
 }
 
