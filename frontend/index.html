@@ -1189,6 +1189,9 @@ async function init() {
   loadDayRecord();
 }
 
+// Run on every page load
+document.addEventListener('DOMContentLoaded', init);
+
 </script>
 </body>
 </html>
