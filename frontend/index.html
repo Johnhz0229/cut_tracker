@@ -272,6 +272,36 @@
   /* ── Setup ── */
   .setup-note { font-size: 12px; color: var(--muted); margin-top: calc(var(--sp)*3); text-align: center; }
 
+  /* ── Auth screen ── */
+  #auth-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 500;
+  }
+  .auth-box { width: 100%; max-width: 360px; padding: calc(var(--sp)*3); }
+  .auth-title { font-size: 22px; font-weight: 700; text-align: center; margin-bottom: calc(var(--sp)*3); }
+  .auth-tabs { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: calc(var(--sp)*2.5); }
+  .auth-tab {
+    flex: 1; padding: calc(var(--sp)*1.25); background: var(--surface2);
+    border: none; color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 600;
+  }
+  .auth-tab.active { background: var(--surface); color: var(--text); }
+
+  /* ── User bar ── */
+  #user-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: calc(var(--sp)*1.25) calc(var(--sp)*2);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; flex-shrink: 0;
+  }
+  #user-bar-name { color: var(--muted); }
+  #user-bar-name span { color: var(--text); font-weight: 600; }
+  #logout-btn {
+    background: none; border: 1px solid var(--border); border-radius: 5px;
+    color: var(--muted); font-size: 12px; padding: 3px 10px; cursor: pointer;
+  }
+  #logout-btn:hover { color: var(--red); border-color: var(--red); }
+
   /* ── Toast ── */
   #toast {
     position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -312,7 +342,40 @@
 </style>
 </head>
 <body>
-<div id="app">
+<!-- ══ AUTH SCREEN ════════════════════════════════════════════════════════════ -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-title">Cut Tracker</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login-btn" onclick="showAuthTab('login')">Login</button>
+      <button class="auth-tab" id="tab-register-btn" onclick="showAuthTab('register')">Register</button>
+    </div>
+
+    <div id="auth-login-form">
+      <div class="field"><label>Username</label><input type="text" id="login-username" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input type="password" id="login-password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn btn-primary" onclick="doLogin()">Log in</button>
+      <div class="inline-error" id="login-error" style="display:none"></div>
+    </div>
+
+    <div id="auth-register-form" style="display:none">
+      <div class="field"><label>Username</label><input type="text" id="reg-username" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input type="password" id="reg-password" autocomplete="new-password"></div>
+      <div class="field"><label>Confirm password</label><input type="password" id="reg-confirm"></div>
+      <div class="field"><label>Admin key</label><input type="password" id="reg-secret"></div>
+      <button class="btn btn-primary" onclick="doRegister()">Create account</button>
+      <div class="inline-error" id="register-error" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+
+  <!-- ══ USER BAR ════════════════════════════════════════════════════════════ -->
+  <div id="user-bar">
+    <span id="user-bar-name">Logged in as <span id="username-display"></span></span>
+    <button id="logout-btn" onclick="doLogout()">Logout</button>
+  </div>
 
   <!-- ══ TAB 1: LOG ══════════════════════════════════════════════════════════ -->
   <div id="tab-log" class="tab-content active">
@@ -533,14 +596,92 @@ function prefillLog(r) {
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function apiFetch(path, options = {}) {
+  const token = localStorage.getItem('token');
+  if (token) {
+    options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+  }
   try {
     const res = await fetch(path, options);
     const json = await res.json();
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      showAuthScreen();
+      return { success: false, data: null, error: 'Session expired. Please log in again.' };
+    }
     if (!res.ok) return { success: false, data: null, error: json.detail?.error || 'Request failed' };
     return json;
   } catch (e) {
     return { success: false, data: null, error: 'Network error. Is the server running?' };
   }
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+function showAuthScreen() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+function hideAuthScreen(username) {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('username-display').textContent = username;
+}
+
+function showAuthTab(tab) {
+  document.getElementById('auth-login-form').style.display    = tab === 'login'    ? 'block' : 'none';
+  document.getElementById('auth-register-form').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('tab-login-btn').classList.toggle('active',    tab === 'login');
+  document.getElementById('tab-register-btn').classList.toggle('active', tab === 'register');
+}
+
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  hideError('login-error');
+  if (!username || !password) { showError('login-error', 'Fill in all fields.'); return; }
+
+  const res = await apiFetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.success) { showError('login-error', res.error || 'Login failed.'); return; }
+
+  localStorage.setItem('token', res.data.token);
+  localStorage.setItem('username', res.data.username);
+  hideAuthScreen(res.data.username);
+  init();
+}
+
+async function doRegister() {
+  const username = document.getElementById('reg-username').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const confirm  = document.getElementById('reg-confirm').value;
+  const secret   = document.getElementById('reg-secret').value;
+  hideError('register-error');
+
+  if (!username || !password || !confirm || !secret) { showError('register-error', 'Fill in all fields.'); return; }
+  if (password !== confirm) { showError('register-error', 'Passwords do not match.'); return; }
+
+  const res = await apiFetch('/api/admin/create-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, admin_secret: secret }),
+  });
+  if (!res.success) { showError('register-error', res.error || 'Registration failed.'); return; }
+
+  localStorage.setItem('token', res.data.token);
+  localStorage.setItem('username', res.data.username);
+  hideAuthScreen(res.data.username);
+  init();
+}
+
+async function doLogout() {
+  await apiFetch('/api/logout', { method: 'POST' });
+  localStorage.removeItem('token');
+  localStorage.removeItem('username');
+  showAuthScreen();
 }
 
 // ── Log submission ────────────────────────────────────────────────────────────
@@ -1027,19 +1168,24 @@ function escHtml(str) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
+  const token    = localStorage.getItem('token');
+  const username = localStorage.getItem('username');
+
+  if (!token) { showAuthScreen(); return; }
+
+  hideAuthScreen(username);
   updateDateLabel();
 
   const res = await apiFetch('/api/profile');
   if (res.success && res.data) {
     profile = res.data;
-  } else {
+  } else if (res.success) {
     document.getElementById('no-profile-banner').style.display = 'block';
   }
 
   loadDayRecord();
 }
 
-init();
 </script>
 </body>
 </html>

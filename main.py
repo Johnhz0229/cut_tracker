@@ -1,13 +1,16 @@
 import csv
 import io
 import os
+import secrets
 from datetime import date as Date
+from typing import Optional
 
+import bcrypt
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -27,6 +30,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+
 
 def ok(data):
     return {"success": True, "data": data, "error": None}
@@ -34,6 +39,70 @@ def ok(data):
 
 def err(msg: str, status: int = 400):
     raise HTTPException(status_code=status, detail={"success": False, "data": None, "error": msg})
+
+
+# ── Auth dependency ───────────────────────────────────────────────────────────
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail={"success": False, "data": None, "error": "Authorization required"},
+        )
+    token = authorization[7:]
+    user = database.get_user_from_token(token)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail={"success": False, "data": None, "error": "Invalid or expired token"},
+        )
+    return user
+
+
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class AdminCreateUserIn(BaseModel):
+    username: str
+    password: str
+    admin_secret: str
+
+
+@app.post("/api/login")
+def login(body: LoginIn):
+    user = database.get_user_by_username(body.username)
+    if not user or not bcrypt.checkpw(
+        body.password.encode(), user["password_hash"].encode()
+    ):
+        err("Invalid username or password", 401)
+    token = secrets.token_hex(32)
+    database.create_session(token, user["id"])
+    return ok({"token": token, "username": user["username"]})
+
+
+@app.post("/api/logout")
+def logout(authorization: Optional[str] = Header(None)):
+    if authorization and authorization.startswith("Bearer "):
+        database.delete_session(authorization[7:])
+    return ok({"logged_out": True})
+
+
+@app.post("/api/admin/create-user")
+def admin_create_user(body: AdminCreateUserIn):
+    if not ADMIN_SECRET or body.admin_secret != ADMIN_SECRET:
+        err("Invalid admin secret", 403)
+    pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+    try:
+        user = database.create_user(body.username, pw_hash)
+    except ValueError as e:
+        err(str(e), 409)
+    token = secrets.token_hex(32)
+    database.create_session(token, user["id"])
+    return ok({"token": token, "username": user["username"]})
 
 
 # ── Profile ───────────────────────────────────────────────────────────────────
@@ -49,18 +118,16 @@ class ProfileIn(BaseModel):
 
 
 @app.post("/api/profile")
-def create_profile(body: ProfileIn):
+def create_profile(body: ProfileIn, user: dict = Depends(get_current_user)):
     if body.sex not in ("male", "female"):
         err("sex must be 'male' or 'female'")
-    profile = database.upsert_profile(body.model_dump())
+    profile = database.upsert_profile(body.model_dump(), user["id"])
     return ok(profile)
 
 
 @app.get("/api/profile")
-def read_profile():
-    profile = database.get_profile()
-    if not profile:
-        return ok(None)
+def read_profile(user: dict = Depends(get_current_user)):
+    profile = database.get_profile(user["id"])
     return ok(profile)
 
 
@@ -76,8 +143,8 @@ class LogIn(BaseModel):
 
 
 @app.post("/api/log")
-def log_day(body: LogIn):
-    profile = database.get_profile()
+def log_day(body: LogIn, user: dict = Depends(get_current_user)):
+    profile = database.get_profile(user["id"])
     if not profile:
         err("Profile not set up. Please create a profile first.", 422)
 
@@ -125,29 +192,28 @@ def log_day(body: LogIn):
         "tdee": tdee,
         "deficit": deficit,
         "llm_notes": llm_notes,
-    })
+    }, user["id"])
     return ok(record)
 
 
 # ── Records ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/records")
-def list_records(days: int = 30):
-    records = database.get_records(days)
-    return ok(records)
+def list_records(days: int = 30, user: dict = Depends(get_current_user)):
+    return ok(database.get_records(user["id"], days))
 
 
 @app.get("/api/records/{date}")
-def get_record(date: str):
-    record = database.get_record_by_date(date)
+def get_record(date: str, user: dict = Depends(get_current_user)):
+    record = database.get_record_by_date(date, user["id"])
     if not record:
         err(f"No record found for {date}", 404)
     return ok(record)
 
 
 @app.delete("/api/records/{date}")
-def delete_record(date: str):
-    deleted = database.delete_record(date)
+def delete_record(date: str, user: dict = Depends(get_current_user)):
+    deleted = database.delete_record(date, user["id"])
     if not deleted:
         err(f"No record found for {date}", 404)
     return ok({"deleted": date})
@@ -156,9 +222,8 @@ def delete_record(date: str):
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/summary")
-def summary():
-    data = database.get_summary()
-    return ok(data)
+def summary(user: dict = Depends(get_current_user)):
+    return ok(database.get_summary(user["id"]))
 
 
 # ── CSV Export ────────────────────────────────────────────────────────────────
@@ -171,8 +236,8 @@ CSV_COLUMNS = [
 
 
 @app.get("/api/export/csv")
-def export_csv(days: int = 0):
-    records = database.get_records(days if days > 0 else None)
+def export_csv(days: int = 0, user: dict = Depends(get_current_user)):
+    records = database.get_records(user["id"], days if days > 0 else None)
 
     output = io.StringIO()
     writer = csv.writer(output, quoting=csv.QUOTE_ALL)
