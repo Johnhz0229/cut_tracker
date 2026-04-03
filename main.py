@@ -196,7 +196,7 @@ def export_csv(days: int = 0):
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=fat_loss_export.csv"},
+        headers={"Content-Disposition": f"attachment; filename=fat_loss_{Date.today()}.csv"},
     )
 
 
