@@ -152,6 +152,34 @@ def delete_session(token: str) -> None:
         conn.execute("DELETE FROM sessions WHERE token=?", (token,))
 
 
+def get_all_users() -> list[dict]:
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT u.username, u.created_at,
+                   COUNT(d.id) AS record_count
+            FROM users u
+            LEFT JOIN daily_records d ON d.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.created_at DESC
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_user_by_username(username: str) -> bool:
+    with db() as conn:
+        user = conn.execute(
+            "SELECT id FROM users WHERE username=?", (username,)
+        ).fetchone()
+        if not user:
+            return False
+        uid = user["id"]
+        conn.execute("DELETE FROM sessions     WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM daily_records WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM user_profile  WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM users         WHERE id=?",      (uid,))
+        return True
+
+
 # ── Profile ───────────────────────────────────────────────────────────────────
 
 def upsert_profile(data: dict, user_id: int) -> dict:

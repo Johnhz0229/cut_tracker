@@ -10,7 +10,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -91,10 +91,29 @@ def logout(authorization: Optional[str] = Header(None)):
     return ok({"logged_out": True})
 
 
+def require_admin(x_admin_secret: Optional[str] = Header(None)):
+    if not ADMIN_SECRET or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(
+            status_code=401,
+            detail={"success": False, "data": None, "error": "Invalid admin secret"},
+        )
+
+
+class AdminVerifyIn(BaseModel):
+    admin_secret: str
+
+
+@app.post("/api/admin/verify")
+def admin_verify(body: AdminVerifyIn):
+    if not ADMIN_SECRET or body.admin_secret != ADMIN_SECRET:
+        err("Invalid admin secret", 401)
+    return ok({"verified": True})
+
+
 @app.post("/api/admin/create-user")
 def admin_create_user(body: AdminCreateUserIn):
     if not ADMIN_SECRET or body.admin_secret != ADMIN_SECRET:
-        err("Invalid admin secret", 403)
+        err("Invalid admin secret", 401)
     pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
     try:
         user = database.create_user(body.username, pw_hash)
@@ -103,6 +122,19 @@ def admin_create_user(body: AdminCreateUserIn):
     token = secrets.token_hex(32)
     database.create_session(token, user["id"])
     return ok({"token": token, "username": user["username"]})
+
+
+@app.get("/api/admin/users")
+def admin_list_users(_: None = Depends(require_admin)):
+    return ok(database.get_all_users())
+
+
+@app.delete("/api/admin/users/{username}")
+def admin_delete_user(username: str, _: None = Depends(require_admin)):
+    deleted = database.delete_user_by_username(username)
+    if not deleted:
+        err(f"User '{username}' not found", 404)
+    return ok({"deleted": username})
 
 
 # ── Profile ───────────────────────────────────────────────────────────────────
@@ -266,6 +298,11 @@ def export_csv(days: int = 0, user: dict = Depends(get_current_user)):
 
 
 # ── Static frontend ───────────────────────────────────────────────────────────
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    return FileResponse("frontend/admin.html")
+
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
