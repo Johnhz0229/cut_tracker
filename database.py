@@ -92,16 +92,16 @@ def init_db():
                 tdee REAL,
                 deficit REAL,
                 llm_notes TEXT,
+                food_items_json TEXT,
                 created_at TEXT,
                 UNIQUE(user_id, date)
             )
         """)
         dr_cols = {row[1] for row in conn.execute("PRAGMA table_info(daily_records)")}
-        for col in ("activity_multiplier", "user_id"):
+        for col, typ in [("activity_multiplier", "REAL"), ("user_id", "INTEGER"),
+                         ("food_items_json", "TEXT")]:
             if col not in dr_cols:
-                conn.execute(f"ALTER TABLE daily_records ADD COLUMN {col} INTEGER"
-                             if col == "user_id" else
-                             f"ALTER TABLE daily_records ADD COLUMN {col} REAL")
+                conn.execute(f"ALTER TABLE daily_records ADD COLUMN {col} {typ}")
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -233,14 +233,14 @@ def upsert_record(data: dict, user_id: int) -> dict:
                     exercise_description=?, protein_g=?, carbs_g=?, fat_g=?,
                     calories_food=?, tef_protein=?, tef_carbs=?, tef_fat=?,
                     tef_total=?, calories_burned_exercise=?, activity_multiplier=?,
-                    tdee=?, deficit=?, llm_notes=?
+                    tdee=?, deficit=?, llm_notes=?, food_items_json=?
                 WHERE user_id=? AND date=?
             """, (
                 data["weight_kg"], data["food_description"], data["activity_description"],
                 data["exercise_description"], data["protein_g"], data["carbs_g"], data["fat_g"],
                 data["calories_food"], data["tef_protein"], data["tef_carbs"], data["tef_fat"],
                 data["tef_total"], data["calories_burned_exercise"], data["activity_multiplier"],
-                data["tdee"], data["deficit"], data["llm_notes"],
+                data["tdee"], data["deficit"], data["llm_notes"], data.get("food_items_json"),
                 user_id, data["date"],
             ))
         else:
@@ -250,15 +250,15 @@ def upsert_record(data: dict, user_id: int) -> dict:
                     exercise_description, protein_g, carbs_g, fat_g,
                     calories_food, tef_protein, tef_carbs, tef_fat,
                     tef_total, calories_burned_exercise, activity_multiplier,
-                    tdee, deficit, llm_notes, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                    tdee, deficit, llm_notes, food_items_json, created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
             """, (
                 user_id, data["date"], data["weight_kg"], data["food_description"],
                 data["activity_description"], data["exercise_description"],
                 data["protein_g"], data["carbs_g"], data["fat_g"],
                 data["calories_food"], data["tef_protein"], data["tef_carbs"], data["tef_fat"],
                 data["tef_total"], data["calories_burned_exercise"], data["activity_multiplier"],
-                data["tdee"], data["deficit"], data["llm_notes"],
+                data["tdee"], data["deficit"], data["llm_notes"], data.get("food_items_json"),
             ))
         row = conn.execute(
             "SELECT * FROM daily_records WHERE user_id=? AND date=?",

@@ -86,12 +86,22 @@ RULES:
 
 Return this exact JSON with no other text:
 {{
-  "protein_g": <number>,
-  "carbs_g": <number>,
-  "fat_g": <number>,
+  "food_items": [
+    {{"name": "<food name>", "protein_g": <number>, "carbs_g": <number>, "fat_g": <number>, "calories": <number>}},
+    ...one object per distinct food item...
+  ],
+  "protein_g": <sum of all food_items protein_g>,
+  "carbs_g": <sum of all food_items carbs_g>,
+  "fat_g": <sum of all food_items fat_g>,
   "calories_burned_exercise": <number>,
   "notes": "<one sentence: MET used, duration assumed, confidence>"
-}}"""
+}}
+
+Rules for food_items:
+- One entry per distinct food/ingredient mentioned.
+- calories = protein_g*4 + carbs_g*4 + fat_g*9 for each item.
+- Totals (protein_g, carbs_g, fat_g) must equal the sums of food_items.
+- Keep names short (≤ 30 chars)."""
 
 
 def _parse_response(content: str) -> dict:

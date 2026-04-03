@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 import secrets
 from datetime import date as Date
@@ -199,6 +200,7 @@ def log_day(body: LogIn, user: dict = Depends(get_current_user)):
     fat_g = llm_data["fat_g"]
     calories_burned_exercise = llm_data["calories_burned_exercise"]
     llm_notes = llm_data.get("notes", "")
+    food_items_json = json.dumps(llm_data.get("food_items", []))
 
     tef = calculator.calculate_tef(protein_g, carbs_g, fat_g)
     calories_food = calculator.calculate_calories_food(protein_g, carbs_g, fat_g)
@@ -224,6 +226,7 @@ def log_day(body: LogIn, user: dict = Depends(get_current_user)):
         "tdee": tdee,
         "deficit": deficit,
         "llm_notes": llm_notes,
+        "food_items_json": food_items_json,
     }, user["id"])
     return ok(record)
 
