@@ -267,6 +267,19 @@ def upsert_record(data: dict, user_id: int) -> dict:
         return dict(row)
 
 
+def get_cached_llm_result(user_id: int, food_description: str, exercise_description: str) -> Optional[dict]:
+    """Return cached LLM output if a prior record has identical food + exercise descriptions."""
+    with db() as conn:
+        row = conn.execute(
+            """SELECT protein_g, carbs_g, fat_g, calories_burned_exercise, llm_notes, food_items_json
+               FROM daily_records
+               WHERE user_id=? AND food_description=? AND exercise_description=?
+               ORDER BY date DESC LIMIT 1""",
+            (user_id, food_description, exercise_description),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def get_records(user_id: int, days: Optional[int] = None) -> list[dict]:
     with db() as conn:
         if days:

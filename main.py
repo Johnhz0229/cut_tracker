@@ -181,26 +181,37 @@ def log_day(body: LogIn, user: dict = Depends(get_current_user)):
     if not profile:
         err("Profile not set up. Please create a profile first.", 422)
 
-    try:
-        llm_data = llm_client.analyze(
-            body.food_description,
-            body.activity_description,
-            body.exercise_description,
-            body.weight_kg,
-            profile["age"],
-            profile["sex"],
-        )
-    except TimeoutError:
-        err("AI analysis timed out. Try again.", 503)
-    except RuntimeError as e:
-        err(str(e), 503)
+    cached = database.get_cached_llm_result(
+        user["id"], body.food_description, body.exercise_description
+    )
+    if cached:
+        protein_g = cached["protein_g"]
+        carbs_g = cached["carbs_g"]
+        fat_g = cached["fat_g"]
+        calories_burned_exercise = cached["calories_burned_exercise"]
+        llm_notes = cached["llm_notes"] or ""
+        food_items_json = cached["food_items_json"] or "[]"
+    else:
+        try:
+            llm_data = llm_client.analyze(
+                body.food_description,
+                body.activity_description,
+                body.exercise_description,
+                body.weight_kg,
+                profile["age"],
+                profile["sex"],
+            )
+        except TimeoutError:
+            err("AI analysis timed out. Try again.", 503)
+        except RuntimeError as e:
+            err(str(e), 503)
 
-    protein_g = llm_data["protein_g"]
-    carbs_g = llm_data["carbs_g"]
-    fat_g = llm_data["fat_g"]
-    calories_burned_exercise = llm_data["calories_burned_exercise"]
-    llm_notes = llm_data.get("notes", "")
-    food_items_json = json.dumps(llm_data.get("food_items", []))
+        protein_g = llm_data["protein_g"]
+        carbs_g = llm_data["carbs_g"]
+        fat_g = llm_data["fat_g"]
+        calories_burned_exercise = llm_data["calories_burned_exercise"]
+        llm_notes = llm_data.get("notes", "")
+        food_items_json = json.dumps(llm_data.get("food_items", []))
 
     tef = calculator.calculate_tef(protein_g, carbs_g, fat_g)
     calories_food = calculator.calculate_calories_food(protein_g, carbs_g, fat_g)
