@@ -136,7 +136,7 @@
     text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
   }
   .pl-row {
-    display: flex; justify-content: space-between; align-items: baseline;
+    display: flex; justify-content: space-between; align-items: flex-start;
     padding: 3px 0; font-size: 13px;
   }
   .pl-row .pl-label { color: var(--muted); }
@@ -227,9 +227,11 @@
   .history-protein { font-size: 12px; color: var(--muted); min-width: 20px; text-align: center; }
   .history-body {
     display: none;
-    padding: 0 calc(var(--sp)*2) calc(var(--sp)*2);
     border-top: 1px solid var(--border);
-    padding-top: calc(var(--sp)*1.5);
+    padding-bottom: calc(var(--sp)*2);
+  }
+  .history-body-padded {
+    padding: calc(var(--sp)*1.5) calc(var(--sp)*2) 0;
   }
   .history-card.expanded .history-body { display: block; }
   .macro-row { display: flex; gap: calc(var(--sp)*2); margin-bottom: var(--sp); }
@@ -545,7 +547,9 @@ function deficitColor(v) {
 }
 
 function deficitSign(v) {
-  return v == null ? '—' : (v >= 0 ? '+' : '') + fmt1(v) + ' kcal';
+  // DB deficit = TDEE − net_intake. Positive = fat loss → display as "−X kcal" (green).
+  if (v == null) return '—';
+  return (v > 0 ? '−' : v < 0 ? '+' : '') + fmt1(Math.abs(v)) + ' kcal';
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -754,40 +758,42 @@ function signed(n, unit = ' kcal') {
   return (n >= 0 ? '+' : '−') + fmt1(Math.abs(n)) + unit;
 }
 
-function showResult(r, prof) {
-  const goals = macroGoals(prof);
+function macroGoalBadge(actual, goal) {
+  if (goal == null) return '';
+  return actual >= goal
+    ? `<span class="tag text-green">✓ ${fmt1(goal)}g</span>`
+    : `<span class="tag text-yellow">↓${fmt1(goal - actual)}g</span>`;
+}
 
-  const proteinKcal = (r.protein_g || 0) * 4;
-  const carbsKcal   = (r.carbs_g   || 0) * 4;
-  const fatKcal     = (r.fat_g     || 0) * 9;
-  const netIntake   = (r.calories_food || 0) - (r.tef_total || 0);
-  const bmrPassive  = (r.tdee || 0) - (r.calories_burned_exercise || 0);
-  const actMult     = r.activity_multiplier ?? '?';
-  // net energy: positive = surplus, negative = deficit
-  const netEnergy   = netIntake - (r.tdee || 0);
-  const netColor    = netEnergy <= 0 ? 'text-green' : 'text-red';
-  const netIcon     = netEnergy <= 0 ? '✓' : '✗';
-
-  function macroGoalBadge(actual, goal) {
-    if (goal == null) return '';
-    return actual >= goal
-      ? `<span class="tag text-green">✓ ${fmt1(goal)}g</span>`
-      : `<span class="tag text-yellow">↓${fmt1(goal - actual)}g</span>`;
-  }
+function buildPLContent(r, prof) {
+  const goals     = macroGoals(prof);
+  const netIntake = (r.calories_food || 0) - (r.tef_total || 0);
+  const bmrPassive = (r.tdee || 0) - (r.calories_burned_exercise || 0);
+  const actMult   = r.activity_multiplier ?? '?';
+  const netEnergy = netIntake - (r.tdee || 0);
+  const netColor  = netEnergy <= 0 ? 'text-green' : 'text-red';
+  const netIcon   = netEnergy <= 0 ? '✓' : '✗';
 
   const foodItems = (() => {
     try { return JSON.parse(r.food_items_json || '[]'); } catch { return []; }
   })();
 
   const foodRows = foodItems.length
-    ? foodItems.map(item => `
+    ? foodItems.map(item => {
+        const wt = item.weight_g > 0 ? item.weight_g : null;
+        const per100 = wt
+          ? `<br><span class="food-item-macros">per 100g  P${Math.round(item.protein_g / wt * 100)} C${Math.round(item.carbs_g / wt * 100)} F${Math.round(item.fat_g / wt * 100)}</span>`
+          : '';
+        return `
         <div class="pl-row indent">
           <span class="pl-label">
             ${escHtml(item.name)}
             <span class="food-item-macros">P${fmt1(item.protein_g)} C${fmt1(item.carbs_g)} F${fmt1(item.fat_g)}</span>
+            ${per100}
           </span>
           <span class="pl-val">${kcal(item.calories)}</span>
-        </div>`).join('')
+        </div>`;
+      }).join('')
     : `<div class="pl-row indent">
         <span class="pl-label">Protein ${fmt1(r.protein_g)}g / Carbs ${fmt1(r.carbs_g)}g / Fat ${fmt1(r.fat_g)}g</span>
         <span class="pl-val">${kcal(r.calories_food)}</span>
@@ -802,7 +808,7 @@ function showResult(r, prof) {
       </span>
     </div>`;
 
-  const html = `
+  return `
     <!-- ── FOOD ── -->
     <div class="pl-section">
       <div class="pl-section-label">Food</div>
@@ -865,9 +871,11 @@ function showResult(r, prof) {
     </div>
     ` : ''}
   `;
+}
 
+function showResult(r, prof) {
   const card = document.getElementById('result-card');
-  card.innerHTML = html;
+  card.innerHTML = buildPLContent(r, prof);
   card.style.display = 'block';
 }
 
@@ -889,28 +897,13 @@ async function loadHistory() {
   list.innerHTML = res.data.map(r => buildHistoryCard(r)).join('');
 }
 
-function macroHistItem(label, actual, goal) {
-  const val = fmt1(actual) + 'g';
-  if (goal == null) return `<div class="macro-item"><div class="macro-label">${label}</div><div class="macro-val">${val}</div></div>`;
-  const met = actual >= goal;
-  const color = met ? 'text-green' : 'text-yellow';
-  const badge = met ? '✓' : `↓${fmt1(goal - actual)}g`;
-  return `<div class="macro-item"><div class="macro-label">${label}</div><div class="macro-val ${color}">${val} <span style="font-size:11px">${badge}</span></div></div>`;
-}
 
 function buildHistoryCard(r) {
   const goals = macroGoals(profile);
   const defColor = r.deficit >= 0 ? 'text-green' : 'text-red';
   const proteinOk = goals.protein != null && r.protein_g >= goals.protein;
   const proteinIcon = goals.protein != null ? (proteinOk ? '<span class="text-green">✓</span>' : '<span class="text-red">✗</span>') : '';
-
-  const food = escHtml(r.food_description || '');
   const ex = escHtml(r.exercise_description || '');
-  const notes = escHtml(r.llm_notes || '');
-  const netIntake = fmt1((r.calories_food || 0) - (r.tef_total || 0));
-  const histFoodItems = (() => {
-    try { return JSON.parse(r.food_items_json || '[]'); } catch { return []; }
-  })();
 
   return `
   <div class="history-card" data-date="${r.date}">
@@ -921,37 +914,15 @@ function buildHistoryCard(r) {
       <span class="history-protein">${proteinIcon}</span>
     </div>
     <div class="history-body">
-      ${ex ? `<div class="sport-tag">🏃 ${ex}</div>` : ''}
-
-      <div class="energy-row">
-        <div class="energy-item"><div class="e-label">Intake</div><div class="e-val text-green">+${fmt1(r.calories_food)}</div></div>
-        <div class="energy-item"><div class="e-label">TEF</div><div class="e-val text-red">−${fmt1(r.tef_total)}</div></div>
-        <div class="energy-item"><div class="e-label">Burned</div><div class="e-val text-red">−${fmt1(r.calories_burned_exercise)}</div></div>
-        <div class="energy-item"><div class="e-label">Net</div><div class="e-val">${netIntake}</div></div>
-      </div>
-
-      <div class="macro-row">
-        ${macroHistItem('Protein', r.protein_g, goals.protein)}
-        ${macroHistItem('Carbs',   r.carbs_g,   goals.carbs)}
-        ${macroHistItem('Fat',     r.fat_g,      goals.fat)}
-        <div class="macro-item"><div class="macro-label">TDEE</div><div class="macro-val">${fmt1(r.tdee)}</div></div>
-      </div>
-
-      ${histFoodItems.length ? `
-        <div style="margin-top:8px;display:flex;flex-direction:column;gap:3px">
-          ${histFoodItems.map(item => `
-            <div style="display:flex;justify-content:space-between;font-size:12px">
-              <span style="color:var(--muted)">${escHtml(item.name)}<span class="food-item-macros"> P${fmt1(item.protein_g)} C${fmt1(item.carbs_g)} F${fmt1(item.fat_g)}</span></span>
-              <span style="color:var(--text)">${fmt1(item.calories)} kcal</span>
-            </div>`).join('')}
-        </div>` : food ? `<div class="text-block clamped">${food}</div><div class="show-more" onclick="toggleClamp(this)">show more</div>` : ''}
-      ${notes ? `<div class="text-block text-muted" style="margin-top:6px;font-style:italic">${notes}</div>` : ''}
-
-      <button class="delete-btn" onclick="promptDelete(this, '${r.date}')">Delete record</button>
-      <div class="confirm-delete" style="display:none">
-        Delete this day permanently?
-        <button class="yes" onclick="confirmDelete('${r.date}')">Yes, delete</button>
-        <button onclick="cancelDelete(this)">Cancel</button>
+      ${ex ? `<div class="history-body-padded"><div class="sport-tag">🏃 ${ex}</div></div>` : ''}
+      ${buildPLContent(r, profile)}
+      <div style="padding:0 calc(var(--sp)*2)">
+        <button class="delete-btn" onclick="promptDelete(this, '${r.date}')">Delete record</button>
+        <div class="confirm-delete" style="display:none">
+          Delete this day permanently?
+          <button class="yes" onclick="confirmDelete('${r.date}')">Yes, delete</button>
+          <button onclick="cancelDelete(this)">Cancel</button>
+        </div>
       </div>
     </div>
   </div>`;

@@ -87,7 +87,7 @@ RULES:
 Return this exact JSON with no other text:
 {{
   "food_items": [
-    {{"name": "<food name>", "protein_g": <number>, "carbs_g": <number>, "fat_g": <number>, "calories": <number>}},
+    {{"name": "<food name>", "weight_g": <number>, "protein_g": <number>, "carbs_g": <number>, "fat_g": <number>, "calories": <number>}},
     ...one object per distinct food item...
   ],
   "protein_g": <sum of all food_items protein_g>,
@@ -99,6 +99,7 @@ Return this exact JSON with no other text:
 
 Rules for food_items:
 - One entry per distinct food/ingredient mentioned.
+- weight_g: the total weight of this food item in grams (as given or estimated by you).
 - calories = protein_g*4 + carbs_g*4 + fat_g*9 for each item.
 - Totals (protein_g, carbs_g, fat_g) must equal the sums of food_items.
 - Keep names short (≤ 30 chars).
