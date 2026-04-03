@@ -261,23 +261,68 @@
 
   /* ── Trends ── */
   .chart-wrap { margin-bottom: calc(var(--sp)*3); }
-  .chart-title { font-size: 13px; color: var(--muted); margin-bottom: var(--sp); }
+  .chart-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: calc(var(--sp)*1.25);
+  }
   canvas { width: 100% !important; }
 
+  /* Insights card */
+  .insights-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: calc(var(--sp)*2);
+    margin-bottom: calc(var(--sp)*3);
+  }
+  .insights-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: calc(var(--sp)*1.5);
+  }
+  .insight-row {
+    display: flex; align-items: flex-start; gap: calc(var(--sp)*1.25);
+    padding: calc(var(--sp)*1.25) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .insight-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .insight-row:first-of-type { padding-top: 0; }
+  .insight-icon { font-size: 18px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
+  .insight-body { flex: 1; }
+  .insight-label { font-size: 12px; color: var(--muted); }
+  .insight-value { font-size: 15px; font-weight: 600; margin-top: 1px; }
+
+  /* Macro bars */
+  .macro-bars { margin-bottom: calc(var(--sp)*3); }
+  .macro-bar-row { margin-bottom: calc(var(--sp)*1.75); }
+  .macro-bar-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 5px;
+  }
+  .macro-bar-name { font-size: 13px; font-weight: 600; }
+  .macro-bar-nums { font-size: 12px; color: var(--muted); }
+  .macro-bar-track {
+    height: 7px; background: var(--surface2); border-radius: 99px; overflow: hidden;
+  }
+  .macro-bar-fill {
+    height: 100%; border-radius: 99px;
+    transition: width 0.6s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* Stats grid */
   .stats-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--sp);
-    margin-top: calc(var(--sp)*2);
+    margin-bottom: calc(var(--sp)*3);
   }
   .stat-box {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: calc(var(--sp)*1.5);
+    border-radius: 10px;
+    padding: calc(var(--sp)*1.75);
   }
-  .stat-label { font-size: 11px; color: var(--muted); }
-  .stat-val { font-size: 20px; font-weight: 700; margin-top: 2px; }
+  .stat-label { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+  .stat-val { font-size: 22px; font-weight: 700; margin-top: 4px; }
 
   /* ── Setup ── */
   .setup-note { font-size: 12px; color: var(--muted); margin-top: calc(var(--sp)*3); text-align: center; }
@@ -439,14 +484,24 @@
 
   <!-- ══ TAB 3: TRENDS ══════════════════════════════════════════════════════ -->
   <div id="tab-trends" class="tab-content">
+    <div class="insights-card" id="insights-card" style="display:none">
+      <div class="insights-title">Insights</div>
+      <div id="insights-body"></div>
+    </div>
+
     <div class="chart-wrap">
       <div class="chart-title">Weight — last 30 days</div>
-      <canvas id="weight-chart" height="180"></canvas>
+      <canvas id="weight-chart" height="160"></canvas>
     </div>
+
     <div class="chart-wrap">
       <div class="chart-title">Daily Deficit — last 14 days</div>
-      <canvas id="deficit-chart" height="180"></canvas>
+      <canvas id="deficit-chart" height="160"></canvas>
     </div>
+
+    <div class="chart-title" style="margin-bottom:calc(var(--sp)*1.5)">Avg Macros vs Goals — 7 days</div>
+    <div class="macro-bars" id="macro-bars"></div>
+
     <div class="stats-row" id="stats-row"></div>
   </div>
 
@@ -999,34 +1054,70 @@ async function loadTrends() {
     apiFetch('/api/summary'),
   ]);
 
-  // Weight chart
   const w30 = (r30.data || []).filter(r => r.weight_kg).reverse();
   renderWeightChart(w30.map(r => r.date), w30.map(r => r.weight_kg));
 
-  // Deficit chart
   const d14 = (r14.data || []).reverse();
   renderDeficitChart(d14.map(r => r.date), d14.map(r => r.deficit));
 
-  // Stats row
-  if (summary.success) renderStats(summary.data);
+  if (summary.success) {
+    renderInsights(summary.data);
+    renderMacroBars(summary.data);
+    renderStats(summary.data);
+  }
+}
+
+// Linear regression — returns {slope, intercept}
+function linReg(ys) {
+  const n = ys.length;
+  if (n < 2) return null;
+  const xs = ys.map((_, i) => i);
+  const mx = (n - 1) / 2;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0);
+  const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  const slope = den ? num / den : 0;
+  return { slope, intercept: my - slope * mx };
 }
 
 function renderWeightChart(labels, data) {
   const ctx = document.getElementById('weight-chart').getContext('2d');
   if (weightChart) weightChart.destroy();
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 260);
+  grad.addColorStop(0, 'rgba(96,165,250,0.18)');
+  grad.addColorStop(1, 'rgba(96,165,250,0)');
+
+  const datasets = [{
+    data,
+    borderColor: '#60a5fa',
+    backgroundColor: grad,
+    fill: true,
+    pointRadius: data.length <= 10 ? 4 : 2,
+    pointBackgroundColor: '#60a5fa',
+    pointBorderColor: '#0a0a0a',
+    pointBorderWidth: 1.5,
+    tension: 0.35,
+    borderWidth: 2,
+  }];
+
+  // Trend line
+  const reg = linReg(data);
+  if (reg && data.length >= 3) {
+    datasets.push({
+      data: data.map((_, i) => reg.slope * i + reg.intercept),
+      borderColor: 'rgba(251,191,36,0.5)',
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+    });
+  }
+
   weightChart = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: labels.map(fmtDate),
-      datasets: [{
-        data,
-        borderColor: '#60a5fa',
-        backgroundColor: 'transparent',
-        pointRadius: 3,
-        pointBackgroundColor: '#60a5fa',
-        tension: 0.3,
-      }]
-    },
+    data: { labels: labels.map(fmtDate), datasets },
     options: chartOptions('kg'),
   });
 }
@@ -1034,16 +1125,46 @@ function renderWeightChart(labels, data) {
 function renderDeficitChart(labels, data) {
   const ctx = document.getElementById('deficit-chart').getContext('2d');
   if (deficitChart) deficitChart.destroy();
+
+  const avg = data.length ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+
   deficitChart = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: labels.map(fmtDate),
-      datasets: [{
-        data,
-        backgroundColor: data.map(v => v >= 0 ? '#4ade80' : '#f87171'),
-      }]
+      datasets: [
+        {
+          data,
+          backgroundColor: data.map(v => v >= 0 ? 'rgba(74,222,128,0.75)' : 'rgba(248,113,113,0.75)'),
+          borderColor:      data.map(v => v >= 0 ? '#4ade80' : '#f87171'),
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false,
+        },
+        {
+          type: 'line',
+          data: data.map(() => avg),
+          borderColor: 'rgba(251,191,36,0.7)',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          fill: false,
+        },
+      ]
     },
-    options: chartOptions('kcal'),
+    options: {
+      ...chartOptions('kcal'),
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.datasetIndex === 0
+              ? ` ${ctx.parsed.y >= 0 ? '+' : ''}${Math.round(ctx.parsed.y)} kcal`
+              : ` Avg: ${Math.round(avg)} kcal`,
+          }
+        }
+      }
+    },
   });
 }
 
@@ -1053,30 +1174,133 @@ function chartOptions(unit) {
     plugins: { legend: { display: false } },
     scales: {
       x: {
-        ticks: { color: '#666', maxRotation: 45, font: { size: 10 } },
-        grid: { color: '#1e1e1e' },
+        ticks: { color: '#555', maxRotation: 45, font: { size: 10 } },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        border: { color: 'rgba(255,255,255,0.08)' },
       },
       y: {
-        ticks: { color: '#666', font: { size: 11 }, callback: v => v + unit },
-        grid: { color: '#2a2a2a' },
+        ticks: { color: '#555', font: { size: 10 }, callback: v => v + unit },
+        grid: { color: 'rgba(255,255,255,0.06)' },
+        border: { color: 'rgba(255,255,255,0.08)' },
       }
     }
   };
 }
 
-function renderStats(s) {
-  const pt = profile ? fmt1(profile.weight_kg * 2.0) : '—';
-  const proteinColor = s.avg_protein_7d != null && profile && s.avg_protein_7d >= profile.weight_kg * 2.0
-    ? 'text-green' : 'text-yellow';
+function renderInsights(s) {
+  const card = document.getElementById('insights-card');
+  const body = document.getElementById('insights-body');
+  if (s.avg_deficit_7d == null && s.days_logged < 1) return;
 
+  const rows = [];
+
+  // 4-week projection
+  if (s.avg_deficit_7d != null) {
+    const d = s.avg_deficit_7d;
+    const kg4w = (d * 28) / 7700;
+    const dir = kg4w >= 0 ? 'lose' : 'gain';
+    const absKg = Math.abs(kg4w).toFixed(1);
+    const pace = Math.abs(d) < 150  ? 'Very mild deficit — consider eating less or moving more'
+               : Math.abs(d) < 350  ? 'Mild cut — sustainable long-term pace'
+               : Math.abs(d) < 600  ? 'Moderate cut — solid progress without much muscle risk'
+               : Math.abs(d) < 850  ? 'Aggressive cut — watch energy & protein closely'
+               :                      'Very aggressive — ensure adequate protein & recovery';
+    const icon = d >= 0 ? '📉' : '📈';
+    rows.push(`<div class="insight-row">
+      <div class="insight-icon">${icon}</div>
+      <div class="insight-body">
+        <div class="insight-label">4-week projection</div>
+        <div class="insight-value">~${absKg} kg ${dir} at current pace</div>
+      </div>
+    </div>`);
+    rows.push(`<div class="insight-row">
+      <div class="insight-icon">🎯</div>
+      <div class="insight-body">
+        <div class="insight-label">Cut intensity</div>
+        <div class="insight-value" style="font-size:13px">${pace}</div>
+      </div>
+    </div>`);
+  }
+
+  // Weight trend from actual data
+  if (s.weight_change != null && s.days_logged >= 2) {
+    const wkRate = (s.weight_change / s.days_logged * 7).toFixed(2);
+    const col = s.weight_change <= 0 ? 'var(--green)' : 'var(--red)';
+    rows.push(`<div class="insight-row">
+      <div class="insight-icon">⚖️</div>
+      <div class="insight-body">
+        <div class="insight-label">Actual weight trend</div>
+        <div class="insight-value" style="color:${col}">${wkRate > 0 ? '+' : ''}${wkRate} kg / week</div>
+      </div>
+    </div>`);
+  }
+
+  // Consistency
+  if (s.days_logged > 0) {
+    rows.push(`<div class="insight-row">
+      <div class="insight-icon">📅</div>
+      <div class="insight-body">
+        <div class="insight-label">Days logged</div>
+        <div class="insight-value">${s.days_logged} day${s.days_logged !== 1 ? 's' : ''} total</div>
+      </div>
+    </div>`);
+  }
+
+  if (rows.length === 0) return;
+  body.innerHTML = rows.join('');
+  card.style.display = '';
+}
+
+function renderMacroBars(s) {
+  const macros = [
+    {
+      name: 'Protein',
+      avg: s.avg_protein_7d,
+      goal: profile?.protein_goal_g ?? (profile?.weight_kg ? profile.weight_kg * 2.0 : null),
+      color: '#60a5fa',
+    },
+    {
+      name: 'Carbs',
+      avg: s.avg_carbs_7d,
+      goal: profile?.carbs_goal_g ?? null,
+      color: '#fbbf24',
+    },
+    {
+      name: 'Fat',
+      avg: s.avg_fat_7d,
+      goal: profile?.fat_goal_g ?? null,
+      color: '#f97316',
+    },
+  ];
+
+  const el = document.getElementById('macro-bars');
+  el.innerHTML = macros.map(m => {
+    if (m.avg == null) return '';
+    const avg = Math.round(m.avg);
+    const hasGoal = m.goal != null;
+    const pct = hasGoal ? Math.min(100, Math.round(m.avg / m.goal * 100)) : null;
+    const met = hasGoal && m.avg >= m.goal;
+    const fillColor = !hasGoal ? m.color : met ? '#4ade80' : m.avg / m.goal >= 0.8 ? '#fbbf24' : '#f87171';
+    const numStr = hasGoal
+      ? `${avg}g <span style="color:var(--muted)">/ ${Math.round(m.goal)}g</span>`
+      : `${avg}g`;
+    return `<div class="macro-bar-row">
+      <div class="macro-bar-header">
+        <span class="macro-bar-name" style="color:${m.color}">${m.name}</span>
+        <span class="macro-bar-nums">${numStr}</span>
+      </div>
+      <div class="macro-bar-track">
+        <div class="macro-bar-fill" style="width:${pct ?? 60}%;background:${fillColor}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderStats(s) {
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-box">
       <div class="stat-label">Avg Deficit 7d</div>
       <div class="stat-val ${s.avg_deficit_7d >= 0 ? 'text-green' : 'text-red'}">${deficitSign(s.avg_deficit_7d)}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">Avg Protein 7d</div>
-      <div class="stat-val ${proteinColor}">${fmt1(s.avg_protein_7d)}g<span style="font-size:12px;color:var(--muted)"> / ${pt}g</span></div>
     </div>
     <div class="stat-box">
       <div class="stat-label">Avg TEF 7d</div>
@@ -1087,8 +1311,8 @@ function renderStats(s) {
       <div class="stat-val">${s.days_logged}</div>
     </div>
     ${s.weight_change != null ? `
-    <div class="stat-box" style="grid-column:1/-1">
-      <div class="stat-label">Weight change (start → now)</div>
+    <div class="stat-box">
+      <div class="stat-label">Weight Change</div>
       <div class="stat-val ${s.weight_change <= 0 ? 'text-green' : 'text-red'}">${s.weight_change > 0 ? '+' : ''}${fmt1(s.weight_change)} kg</div>
     </div>` : ''}
   `;

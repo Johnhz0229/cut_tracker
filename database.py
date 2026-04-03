@@ -326,6 +326,8 @@ def get_summary(user_id: int) -> dict:
         avg_deficit_7d  = avg_over_days("deficit", 7)
         avg_deficit_30d = avg_over_days("deficit", 30)
         avg_protein_7d  = avg_over_days("protein_g", 7)
+        avg_carbs_7d    = avg_over_days("carbs_g", 7)
+        avg_fat_7d      = avg_over_days("fat_g", 7)
         avg_tef_7d      = avg_over_days("tef_total", 7)
 
         days_logged = conn.execute(
@@ -364,6 +366,8 @@ def get_summary(user_id: int) -> dict:
             "avg_deficit_7d": avg_deficit_7d,
             "avg_deficit_30d": avg_deficit_30d,
             "avg_protein_7d": avg_protein_7d,
+            "avg_carbs_7d": avg_carbs_7d,
+            "avg_fat_7d": avg_fat_7d,
             "protein_target_g": pt,
             "days_logged": days_logged,
             "current_weight": current_weight,
