@@ -84,19 +84,17 @@ def upsert_profile(data: dict) -> dict:
         if existing:
             conn.execute("""
                 UPDATE user_profile
-                SET height_cm=?, weight_kg=?, age=?, sex=?, activity_level=?,
+                SET height_cm=?, weight_kg=?, age=?, sex=?,
                     protein_goal_g=?, carbs_goal_g=?, fat_goal_g=?
                 WHERE id=1
-            """, (data["height_cm"], data["weight_kg"], data["age"],
-                  data["sex"], data["activity_level"],
+            """, (data["height_cm"], data["weight_kg"], data["age"], data["sex"],
                   data.get("protein_goal_g"), data.get("carbs_goal_g"), data.get("fat_goal_g")))
         else:
             conn.execute("""
-                INSERT INTO user_profile (id, height_cm, weight_kg, age, sex, activity_level,
+                INSERT INTO user_profile (id, height_cm, weight_kg, age, sex,
                     protein_goal_g, carbs_goal_g, fat_goal_g, created_at)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-            """, (data["height_cm"], data["weight_kg"], data["age"],
-                  data["sex"], data["activity_level"],
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (data["height_cm"], data["weight_kg"], data["age"], data["sex"],
                   data.get("protein_goal_g"), data.get("carbs_goal_g"), data.get("fat_goal_g")))
         row = conn.execute("SELECT * FROM user_profile WHERE id=1").fetchone()
         return dict(row)
