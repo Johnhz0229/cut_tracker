@@ -271,6 +271,18 @@
 
   /* ── Setup ── */
   .setup-note { font-size: 12px; color: var(--muted); margin-top: calc(var(--sp)*3); text-align: center; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--green); color: #000;
+    font-size: 14px; font-weight: 600;
+    padding: 10px 20px; border-radius: 8px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 200; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
   .bmr-card {
     background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
     padding: calc(var(--sp)*1.5) calc(var(--sp)*2); margin: calc(var(--sp)*2) 0;
@@ -412,9 +424,10 @@
 
     <button class="btn btn-primary" onclick="saveProfile()">Save Profile</button>
     <div class="inline-error" id="setup-error" style="display:none"></div>
-    <div class="inline-error text-green" id="setup-success" style="display:none">Profile saved.</div>
     <p class="setup-note">All data stored locally. Export CSV from the History tab.</p>
   </div>
+
+  <div id="toast"></div>
 
   <!-- ══ BOTTOM NAV ══════════════════════════════════════════════════════════ -->
   <nav id="nav">
@@ -953,7 +966,6 @@ function updateBmrPreview() {
 
 async function saveProfile() {
   hideError('setup-error');
-  hideError('setup-success');
 
   const height = parseFloat(document.getElementById('height-input').value);
   const weight = parseFloat(document.getElementById('setup-weight-input').value);
@@ -984,7 +996,7 @@ async function saveProfile() {
   }
 
   profile = res.data;
-  document.getElementById('setup-success').style.display = 'block';
+  showToast('✓ Profile saved');
   document.getElementById('no-profile-banner').style.display = 'none';
 }
 
@@ -998,6 +1010,15 @@ function hideError(id) {
   const el = document.getElementById(id);
   el.textContent = '';
   el.style.display = 'none';
+}
+
+let _toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
 function escHtml(str) {
