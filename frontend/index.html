@@ -1138,7 +1138,7 @@ function renderDeficitChart(labels, data) {
           borderColor:      data.map(v => v >= 0 ? '#4ade80' : '#f87171'),
           borderWidth: 1,
           borderRadius: 4,
-          borderSkipped: false,
+          borderSkipped: 'start',   // rounds the far end: top for positive, bottom for negative
         },
         {
           type: 'line',
@@ -1153,6 +1153,19 @@ function renderDeficitChart(labels, data) {
     },
     options: {
       ...chartOptions('kcal'),
+      scales: {
+        ...chartOptions('kcal').scales,
+        y: {
+          ...chartOptions('kcal').scales.y,
+          grid: {
+            color: ctx => ctx.tick.value === 0
+              ? 'rgba(255,255,255,0.25)'
+              : 'rgba(255,255,255,0.06)',
+            lineWidth: ctx => ctx.tick.value === 0 ? 1.5 : 1,
+          },
+          border: { color: 'rgba(255,255,255,0.08)' },
+        }
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1300,10 +1313,6 @@ function renderStats(s) {
     <div class="stat-box">
       <div class="stat-label">Avg Deficit 7d</div>
       <div class="stat-val ${s.avg_deficit_7d >= 0 ? 'text-green' : 'text-red'}">${deficitSign(s.avg_deficit_7d)}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">Avg TEF 7d</div>
-      <div class="stat-val text-blue">${fmt1(s.avg_tef_7d)} kcal</div>
     </div>
     <div class="stat-box">
       <div class="stat-label">Days Logged</div>
