@@ -1057,7 +1057,7 @@ async function loadTrends() {
   renderWeightChart(w30.map(r => r.date), w30.map(r => r.weight_kg));
 
   const d14 = (r14.data || []).reverse();
-  renderDeficitChart(d14.map(r => r.date), d14.map(r => r.deficit));
+  renderDeficitChart(d14.map(r => r.date), d14.map(r => -r.deficit));
 
   if (summary.success) {
     renderInsights(summary.data);
@@ -1134,8 +1134,8 @@ function renderDeficitChart(labels, data) {
       datasets: [
         {
           data,
-          backgroundColor: data.map(v => v >= 0 ? 'rgba(74,222,128,0.75)' : 'rgba(248,113,113,0.75)'),
-          borderColor:      data.map(v => v >= 0 ? '#4ade80' : '#f87171'),
+          backgroundColor: data.map(v => v <= 0 ? 'rgba(74,222,128,0.75)' : 'rgba(248,113,113,0.75)'),
+          borderColor:      data.map(v => v <= 0 ? '#4ade80' : '#f87171'),
           borderWidth: 1,
           borderRadius: 4,
           borderSkipped: 'start',   // rounds the far end: top for positive, bottom for negative
@@ -1171,7 +1171,7 @@ function renderDeficitChart(labels, data) {
         tooltip: {
           callbacks: {
             label: ctx => ctx.datasetIndex === 0
-              ? ` ${ctx.parsed.y >= 0 ? '+' : ''}${Math.round(ctx.parsed.y)} kcal`
+              ? ` ${ctx.parsed.y > 0 ? 'Surplus' : 'Deficit'} ${Math.abs(Math.round(ctx.parsed.y))} kcal`
               : ` Avg: ${Math.round(avg)} kcal`,
           }
         }
