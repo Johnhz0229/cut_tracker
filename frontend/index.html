@@ -1267,7 +1267,19 @@ function renderMacroChart(records) {
     data: { labels, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: item => {
+              if (item.dataset.borderDash) return null; // skip goal lines
+              return ` ${item.dataset.label}: ${Math.round(item.parsed.y)}g`;
+            },
+          },
+          filter: item => !item.dataset.borderDash, // hide goal line entries
+        },
+      },
       scales: {
         x: {
           ticks: { color: '#555', maxRotation: 45, font: { size: 10 } },
