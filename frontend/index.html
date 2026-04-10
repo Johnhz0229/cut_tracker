@@ -1073,6 +1073,10 @@ async function loadTrends() {
   renderMacroChart(d14);
 
   if (summary.success) {
+    const recent7 = (r14.data || []).slice(0, 7);
+    summary.data.avg_calories_7d = recent7.length
+      ? recent7.reduce((s, r) => s + (r.calories_food || 0), 0) / recent7.length
+      : null;
     renderInsights(summary.data);
     renderMacroBars(summary.data);
     renderStats(summary.data);
@@ -1430,6 +1434,11 @@ function renderStats(s) {
       <div class="stat-label">Avg Deficit 7d</div>
       <div class="stat-val ${s.avg_deficit_7d >= 0 ? 'text-green' : 'text-red'}">${deficitSign(s.avg_deficit_7d)}</div>
     </div>
+    ${s.avg_calories_7d != null ? `
+    <div class="stat-box">
+      <div class="stat-label">Avg Daily Cals 7d</div>
+      <div class="stat-val">${Math.round(s.avg_calories_7d)} kcal</div>
+    </div>` : ''}
     <div class="stat-box">
       <div class="stat-label">Days Logged</div>
       <div class="stat-val">${s.days_logged}</div>
