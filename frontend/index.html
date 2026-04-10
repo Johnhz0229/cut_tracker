@@ -498,6 +498,17 @@
       <canvas id="deficit-chart" height="160"></canvas>
     </div>
 
+    <div class="chart-wrap">
+      <div class="chart-title">Macros — last 14 days</div>
+      <canvas id="macro-chart" height="180"></canvas>
+      <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#60a5fa">— Protein</span>
+        <span style="font-size:11px;color:#fbbf24">— Carbs</span>
+        <span style="font-size:11px;color:#f97316">— Fat</span>
+        <span style="font-size:11px;color:var(--muted)">--- Goal</span>
+      </div>
+    </div>
+
     <div class="chart-title" style="margin-bottom:calc(var(--sp)*1.5)">Avg Macros vs Goals — 7 days</div>
     <div class="macro-bars" id="macro-bars"></div>
 
@@ -582,6 +593,7 @@
 let currentDate = todayStr();
 let weightChart = null;
 let deficitChart = null;
+let macroChart   = null;
 let profile = null;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1058,6 +1070,7 @@ async function loadTrends() {
 
   const d14 = (r14.data || []).reverse();
   renderDeficitChart(d14.map(r => r.date), d14.map(r => -r.deficit));
+  renderMacroChart(d14);
 
   if (summary.success) {
     renderInsights(summary.data);
@@ -1174,6 +1187,97 @@ function renderDeficitChart(labels, data) {
               ? ` ${ctx.parsed.y > 0 ? 'Surplus' : 'Deficit'} ${Math.abs(Math.round(ctx.parsed.y))} kcal`
               : ` Avg: ${Math.round(avg)} kcal`,
           }
+        }
+      }
+    },
+  });
+}
+
+function renderMacroChart(records) {
+  const ctx = document.getElementById('macro-chart').getContext('2d');
+  if (macroChart) macroChart.destroy();
+
+  const labels  = records.map(r => fmtDate(r.date));
+  const protein = records.map(r => r.protein_g ?? null);
+  const carbs   = records.map(r => r.carbs_g   ?? null);
+  const fat     = records.map(r => r.fat_g      ?? null);
+  const n       = records.length;
+
+  const proteinGoal = profile?.protein_goal_g ?? (profile?.weight_kg ? profile.weight_kg * 2.0 : null);
+  const carbsGoal   = profile?.carbs_goal_g   ?? null;
+  const fatGoal     = profile?.fat_goal_g     ?? null;
+
+  function goalDataset(value, color) {
+    if (value == null) return null;
+    return {
+      data: Array(n).fill(value),
+      borderColor: color,
+      borderWidth: 1,
+      borderDash: [4, 4],
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+    };
+  }
+
+  const datasets = [
+    {
+      label: 'Protein',
+      data: protein,
+      borderColor: '#60a5fa',
+      backgroundColor: 'rgba(96,165,250,0.08)',
+      fill: true,
+      pointRadius: n <= 7 ? 3 : 2,
+      pointBackgroundColor: '#60a5fa',
+      tension: 0.3,
+      borderWidth: 2,
+      spanGaps: true,
+    },
+    {
+      label: 'Carbs',
+      data: carbs,
+      borderColor: '#fbbf24',
+      backgroundColor: 'rgba(251,191,36,0.06)',
+      fill: true,
+      pointRadius: n <= 7 ? 3 : 2,
+      pointBackgroundColor: '#fbbf24',
+      tension: 0.3,
+      borderWidth: 2,
+      spanGaps: true,
+    },
+    {
+      label: 'Fat',
+      data: fat,
+      borderColor: '#f97316',
+      backgroundColor: 'transparent',
+      fill: false,
+      pointRadius: n <= 7 ? 3 : 2,
+      pointBackgroundColor: '#f97316',
+      tension: 0.3,
+      borderWidth: 2,
+      spanGaps: true,
+    },
+    goalDataset(proteinGoal, 'rgba(96,165,250,0.45)'),
+    goalDataset(carbsGoal,   'rgba(251,191,36,0.45)'),
+    goalDataset(fatGoal,     'rgba(249,115,22,0.45)'),
+  ].filter(Boolean);
+
+  macroChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#555', maxRotation: 45, font: { size: 10 } },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { color: 'rgba(255,255,255,0.08)' },
+        },
+        y: {
+          ticks: { color: '#555', font: { size: 10 }, callback: v => v + 'g' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          border: { color: 'rgba(255,255,255,0.08)' },
         }
       }
     },
