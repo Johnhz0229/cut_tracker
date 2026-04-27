@@ -393,6 +393,48 @@
     margin-bottom: calc(var(--sp)*2);
   }
   .section-title { font-size: 17px; font-weight: 700; }
+
+  /* ── Bulk upload ── */
+  #upload-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: none; align-items: center; justify-content: center;
+    z-index: 300; padding: calc(var(--sp)*3);
+  }
+  #upload-overlay.show { display: flex; }
+  .upload-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: calc(var(--sp)*3);
+    width: 100%; max-width: 380px;
+    text-align: center;
+  }
+  .upload-box h3 { margin-bottom: calc(var(--sp)*2); font-size: 16px; }
+  .upload-progress { margin: calc(var(--sp)*2) 0; }
+  .upload-progress-bar {
+    width: 100%; height: 6px; background: var(--surface2);
+    border-radius: 3px; overflow: hidden;
+  }
+  .upload-progress-fill {
+    height: 100%; background: var(--green);
+    border-radius: 3px; transition: width 0.3s;
+  }
+  .upload-progress-text {
+    font-size: 13px; color: var(--muted); margin-top: var(--sp);
+  }
+  .upload-results {
+    text-align: left; max-height: 200px; overflow-y: auto;
+    margin: calc(var(--sp)*2) 0;
+    font-size: 13px;
+  }
+  .upload-result-row { padding: 4px 0; }
+  .upload-result-row.success { color: var(--green); }
+  .upload-result-row.error { color: var(--red); }
+  .upload-template-link {
+    font-size: 12px; color: var(--blue); cursor: pointer; margin-top: var(--sp);
+    display: inline-block;
+  }
+  .upload-template-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -476,9 +518,27 @@
   <div id="tab-history" class="tab-content">
     <div class="history-top">
       <span class="section-title">History</span>
-      <button class="btn-sm" onclick="exportCsv()">Export CSV</button>
+      <div style="display:flex;gap:var(--sp)">
+        <button class="btn-sm" onclick="downloadTemplate()">Template</button>
+        <button class="btn-sm" onclick="triggerBulkUpload()">Upload</button>
+        <button class="btn-sm" onclick="exportCsv()">Export CSV</button>
+      </div>
     </div>
+    <input type="file" id="bulk-file-input" accept=".csv,.xlsx" style="display:none" onchange="handleBulkFile(event)">
     <div id="history-list"></div>
+
+    <!-- Bulk upload overlay -->
+    <div id="upload-overlay">
+      <div class="upload-box">
+        <h3 id="upload-title">Bulk Upload</h3>
+        <div class="upload-progress" id="upload-progress" style="display:none">
+          <div class="upload-progress-bar"><div class="upload-progress-fill" id="progress-fill" style="width:0%"></div></div>
+          <div class="upload-progress-text" id="progress-text"></div>
+        </div>
+        <div class="upload-results" id="upload-results"></div>
+        <button class="btn btn-primary" id="upload-close-btn" onclick="closeUploadOverlay()">Done</button>
+      </div>
+    </div>
   </div>
 
   <!-- ══ TAB 3: TRENDS ══════════════════════════════════════════════════════ -->
@@ -1053,8 +1113,125 @@ function toggleClamp(el) {
   el.textContent = clamped ? 'show more' : 'show less';
 }
 
-function exportCsv() {
-  window.location.href = '/api/export/csv?days=90';
+async function exportCsv() {
+  const token = localStorage.getItem('token');
+  try {
+    const res = await fetch('/api/export/csv?days=90', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fat_loss_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) { /* ignore */ }
+}
+
+// ── Bulk upload ───────────────────────────────────────────────────────────────
+function triggerBulkUpload() {
+  document.getElementById('bulk-file-input').click();
+}
+
+async function downloadTemplate() {
+  const token = localStorage.getItem('token');
+  try {
+    const res = await fetch('/api/bulk-upload/template', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bulk_upload_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) { /* ignore */ }
+}
+
+async function handleBulkFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const overlay = document.getElementById('upload-overlay');
+  const title = document.getElementById('upload-title');
+  const progressDiv = document.getElementById('upload-progress');
+  const progressFill = document.getElementById('progress-fill');
+  const progressText = document.getElementById('progress-text');
+  const resultsDiv = document.getElementById('upload-results');
+  const closeBtn = document.getElementById('upload-close-btn');
+
+  overlay.classList.add('show');
+  title.textContent = 'Uploading...';
+  progressDiv.style.display = 'block';
+  progressFill.style.width = '0%';
+  progressText.textContent = 'Preparing file...';
+  resultsDiv.innerHTML = '';
+  closeBtn.style.display = 'none';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/bulk-upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+    const json = await res.json();
+
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      showAuthScreen();
+      overlay.classList.remove('show');
+      return;
+    }
+
+    if (!res.ok) {
+      title.textContent = 'Upload Failed';
+      progressDiv.style.display = 'none';
+      resultsDiv.innerHTML = `<div class="upload-result-row error">${json.detail?.error || 'Upload failed'}</div>`;
+      closeBtn.style.display = 'block';
+    } else {
+      const d = json.data;
+      title.textContent = `Done: ${d.successes} / ${d.total}`;
+
+      // Show final progress
+      progressFill.style.width = '100%';
+      progressText.textContent = `${d.successes} succeeded, ${d.failures} failed`;
+
+      // Show per-row results
+      resultsDiv.innerHTML = d.results.map(r =>
+        r.success
+          ? `<div class="upload-result-row success">✓ Row ${r.row} — ${r.date}</div>`
+          : `<div class="upload-result-row error">✗ Row ${r.row} — ${r.error}</div>`
+      ).join('');
+
+      closeBtn.style.display = 'block';
+    }
+  } catch (e) {
+    title.textContent = 'Upload Failed';
+    progressDiv.style.display = 'none';
+    resultsDiv.innerHTML = `<div class="upload-result-row error">Network error: ${e.message}</div>`;
+    closeBtn.style.display = 'block';
+  }
+
+  // Reset file input so the same file can be re-uploaded
+  event.target.value = '';
+}
+
+function closeUploadOverlay() {
+  document.getElementById('upload-overlay').classList.remove('show');
+  loadHistory();
 }
 
 // ── Trends ────────────────────────────────────────────────────────────────────
